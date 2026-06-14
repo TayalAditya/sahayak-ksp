@@ -1,9 +1,8 @@
 {
-  "command": "python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000",
+  "command": "/bin/sh -c \"python3 -m pip install fastapi uvicorn python-multipart -q && PYTHONPATH=/app python3 -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000\"",
   "build_path": ".",
   "stack": "python_3_11",
   "env_variables": {
-    "PYTHONPATH": ".",
     "LLM_PROVIDER": "catalyst-qwen",
     "APP_DC": "in",
     "APP_ORG_ID": "60074201340",
@@ -11,8 +10,7 @@
     "APP_QWEN_MODEL": "crm-di-qwen_coder_7b-it",
     "APP_CLIENT_ID": "***REMOVED***",
     "APP_CLIENT_SECRET": "***REMOVED***",
-    "APP_REFRESH_TOKEN": "***REMOVED***",
-    "PYTHONPATH": "/app"
+    "APP_REFRESH_TOKEN": "***REMOVED***"
   },
   "memory": 512,
   "scripts": {}
