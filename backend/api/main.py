@@ -109,17 +109,27 @@ def schema():
     return {"tables": db.table_names()}
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, user=Depends(get_current_user)):
-    # Get or create session
+@app.get("/chat", response_model=ChatResponse)
+def chat_get(
+    question: str,
+    session_id: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    """GET version — avoids CORS preflight for browser clients behind a proxy."""
+    req = ChatRequest(question=question, session_id=session_id)
+    return _do_chat(req, user)
+
+
+_INFO_STARTS = ("I am Sahayak", "This question", "Hello.", "Goodbye",
+                "I answer questions", "I can query")
+
+
+def _do_chat(req: ChatRequest, user):
     sid = req.session_id or str(uuid.uuid4())
     if sid not in _sessions:
         _sessions[sid] = Session(user_id=user["id"], role=user["role"])
     session = _sessions[sid]
-
     result = session.ask(req.question, provider=_provider)
-
-    # Write to audit log (non-blocking)
     audit.log(
         user_id=user["id"],
         nl_question=req.question,
@@ -127,12 +137,7 @@ def chat(req: ChatRequest, user=Depends(get_current_user)):
         row_count=result.row_count,
         role=user["role"],
     )
-
     answer = _build_answer(result)
-    # Informational replies (greetings, meta-questions) should not set error=True
-    # on the response — that causes the frontend to render them as error messages.
-    _INFO_STARTS = ("I am Sahayak", "This question", "Hello.", "Goodbye",
-                    "I answer questions", "I can query")
     is_info_reply = result.error and not result.sql and result.row_count == 0 and any(
         result.error.startswith(s) for s in _INFO_STARTS
     )
@@ -146,6 +151,12 @@ def chat(req: ChatRequest, user=Depends(get_current_user)):
         row_count=result.row_count,
         error=None if is_info_reply else result.error,
     )
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(req: ChatRequest, user=Depends(get_current_user)):
+    return _do_chat(req, user)
+
 
 
 # --------------------------------------------------------------------------- differentiator tools
