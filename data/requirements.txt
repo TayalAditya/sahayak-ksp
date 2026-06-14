@@ -1,0 +1,3 @@
+# Phase 1 (data generation) uses only the Python standard library — nothing to install.
+# This file exists so `pip install -r requirements.txt` is a no-op and the quick-start
+# instructions work uniformly. Later phases (backend) declare their own dependencies.

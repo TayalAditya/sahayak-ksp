@@ -1,0 +1,29 @@
+# Generated data artifacts (reproducible via data/generate.py — keep repo lean)
+data/ksp_crime.db
+data/csv/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+*.log
+
+# Env / secrets (never commit Catalyst credentials or API keys)
+.env
+.env.*
+!.env.example
+catalyst-config.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
