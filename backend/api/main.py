@@ -75,18 +75,22 @@ class ChatResponse(BaseModel):
 # --------------------------------------------------------------------------- helpers
 
 def _build_answer(result) -> str:
-    """Convert a NL2SQLResult into a human-readable sentence."""
     if result.error:
-        return f"I could not answer that query: {result.error}"
+        # Non-query intercepts (greetings, meta questions) come back as "error" but are
+        # actually informational messages — surface them cleanly without "I could not…".
+        msg = result.error
+        if msg.startswith("I am Sahayak") or msg.startswith("This question"):
+            return msg
+        return f"Unable to answer: {msg}"
     if result.row_count == 0:
         return "No records found matching your query."
     if result.row_count == 1 and len(result.columns) == 1:
         val = result.rows[0][result.columns[0]]
-        return f"The answer is **{val}** (based on {result.row_count} record)."
+        return f"**{val}**"
     return (
-        f"Found **{result.row_count}** record(s). "
-        f"Showing top results below. Every figure is sourced from the crime database — "
-        f"see the SQL and source rows in the evidence panel."
+        f"**{result.row_count}** record(s) found. "
+        f"Every figure is sourced from live crime records — "
+        f"expand the evidence trail to see the query and source rows."
     )
 
 

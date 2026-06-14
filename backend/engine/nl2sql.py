@@ -19,19 +19,19 @@ from . import config, db, llm
 # --------------------------------------------------------------------------- schema summary
 # Kept deliberately compact — max_tokens in Catalyst QuickML = TOTAL context budget
 # (input + output), so every token saved here is a token available for the SQL output.
-_SYSTEM_PROMPT = """SQLite query generator for KSP crime database. Rules:
-1. Return ONLY a SQL SELECT. No explanation, no markdown fences.
-2. Always add LIMIT (max 200). Single quotes for strings.
-3. For crime type queries use crime_head column (spans IPC+BNS automatically).
-4. Cannot answer with SQL? Return: CANNOT_ANSWER
+_SYSTEM_PROMPT = """You are a SQLite query engine. OUTPUT ONLY SQL — no words, no explanation, no markdown.
 
-Tables:
+RULE: Your ENTIRE response must be a single SQL SELECT statement ending with semicolon.
+If the question is not about crime data, output exactly: CANNOT_ANSWER
+Never output greetings, explanations, or any text that is not SQL.
+
+Schema (KSP crime database):
 firs(id,fir_number,police_station_id,district_id,reported_date,occurrence_date,crime_head,status,investigating_officer,latitude,longitude)
 districts(id,name,region,population)
 police_stations(id,name,district_id)
 persons(id,full_name,gender,age,income_band,is_repeat_offender,district_id)
-fir_persons(fir_id,person_id,role) -- role: Accused/Victim/Complainant/Witness
-arrests(person_id,fir_id,arrest_date,bail_status) -- bail_status: In Custody/On Bail/Absconding
+fir_persons(fir_id,person_id,role)
+arrests(person_id,fir_id,arrest_date,bail_status)
 associations(person_a_id,person_b_id,association_type,gang_name,strength)
 fir_sections(fir_id,legal_section_id)
 legal_sections(id,act,section_code,crime_head)
@@ -40,14 +40,35 @@ transactions(from_account_id,to_account_id,amount_inr,txn_date,is_flagged)
 financial_accounts(id,person_id,bank)
 investigation_events(fir_id,event_date,event_type,note)
 
-Examples:
-Q:theft count -> SELECT COUNT(*) AS n FROM firs WHERE crime_head='Theft';
-Q:top districts -> SELECT d.name,COUNT(*) c FROM firs f JOIN districts d ON d.id=f.district_id GROUP BY d.id ORDER BY c DESC LIMIT 10;
-Q:repeat offenders -> SELECT p.full_name,COUNT(*) c FROM fir_persons fp JOIN persons p ON p.id=fp.person_id WHERE fp.role='Accused' GROUP BY p.id ORDER BY c DESC LIMIT 10;
-Q:FIR trends by year -> SELECT substr(occurrence_date,1,4) yr,COUNT(*) n FROM firs GROUP BY yr ORDER BY yr;
-Q:bail status -> SELECT bail_status,COUNT(*) n FROM arrests GROUP BY bail_status;"""
+Examples (ONLY output the SQL, nothing else):
+Q:theft count
+SELECT COUNT(*) AS theft_cases FROM firs WHERE crime_head='Theft' LIMIT 200;
+Q:top 5 districts by FIR count
+SELECT d.name AS district,COUNT(*) AS firs FROM firs f JOIN districts d ON d.id=f.district_id GROUP BY d.id ORDER BY firs DESC LIMIT 5;
+Q:repeat offenders
+SELECT p.full_name,COUNT(*) AS cases FROM fir_persons fp JOIN persons p ON p.id=fp.person_id WHERE fp.role='Accused' GROUP BY p.id ORDER BY cases DESC LIMIT 10;
+Q:FIR trend by year
+SELECT substr(occurrence_date,1,4) AS year,COUNT(*) AS firs FROM firs GROUP BY year ORDER BY year LIMIT 200;
+Q:bail status breakdown
+SELECT bail_status,COUNT(*) AS n FROM arrests GROUP BY bail_status ORDER BY n DESC LIMIT 200;
+Q:IPC vs BNS
+SELECT ls.act,COUNT(*) AS firs FROM fir_sections fs JOIN legal_sections ls ON ls.id=fs.legal_section_id GROUP BY ls.act LIMIT 200;"""
 
-_FEW_SHOT = ""  # examples already in system prompt to save tokens
+# Non-DB inputs to intercept before hitting the LLM
+_NON_QUERY_PATTERNS = re.compile(
+    r"^\s*(hi|hello|hey|namaste|good\s*(morning|evening|afternoon|day)|thanks?|thank\s*you|"
+    r"ok|okay|sure|yes|no|bye|goodbye|help\s*me|what\s*can\s*you\s*do|who\s*are\s*you|"
+    r"what\s*is\s*(this|sahayak)|test|ping)\s*[!?.]*\s*$",
+    re.IGNORECASE
+)
+
+_NON_QUERY_REPLY = (
+    "I am Sahayak, the KSP crime intelligence query engine. "
+    "Ask me questions about FIRs, accused, districts, crime trends, or offender networks. "
+    "Example: \"How many theft cases in Bengaluru?\" or \"Show repeat offenders by case count.\""
+)
+
+_FEW_SHOT = ""
 
 
 def _extract_sql(text):
@@ -107,25 +128,50 @@ def ask(question, provider=None, conversation_context=""):
     """
     provider = provider or llm.get_provider()
 
-    # Build user prompt with optional conversation context for follow-ups.
-    context_block = f"\nPrevious context:\n{conversation_context}\n" if conversation_context else ""
-    user_prompt = f"{_FEW_SHOT}{context_block}\nQ: {question}\nA:"
+    # Intercept non-database inputs (greetings, meta-questions) before hitting the LLM.
+    if _NON_QUERY_PATTERNS.match(question.strip()):
+        return NL2SQLResult(question=question, error=_NON_QUERY_REPLY, raw_llm="[intercepted]")
 
-    raw = provider.complete(
-        system_prompt=_SYSTEM_PROMPT,
-        user_prompt=user_prompt,
-        temperature=0.0,
-        max_tokens=2048,
-    )
+    # Build user prompt — lead with the question to anchor the model's first token on SQL.
+    context_block = f"Previous context:\n{conversation_context}\n\n" if conversation_context else ""
+    user_prompt = f"{context_block}Q:{question}\n"
 
-    if not raw or raw.strip() == "CANNOT_ANSWER":
+    def _call(temp=0.0):
+        return provider.complete(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=temp,
+            max_tokens=2048,
+        )
+
+    raw = _call(0.0)
+
+    if not raw or raw.strip().upper() == "CANNOT_ANSWER":
         return NL2SQLResult(
             question=question,
-            error="This question cannot be answered with a database query.",
+            error="This question cannot be answered with a crime database query.",
             raw_llm=raw,
         )
 
     sql = _extract_sql(raw)
+
+    # If model returned chat text instead of SQL, retry once with a blunter prompt.
+    if not sql:
+        retry_prompt = (
+            f"{context_block}"
+            f"Write a SQLite SELECT query for: {question}\n"
+            f"Output ONLY the SQL statement, starting with SELECT.\n"
+        )
+        raw2 = provider.complete(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=retry_prompt,
+            temperature=0.0,
+            max_tokens=2048,
+        )
+        sql = _extract_sql(raw2 or "")
+        if raw2:
+            raw = raw2
+
     if not sql:
         return NL2SQLResult(
             question=question,
