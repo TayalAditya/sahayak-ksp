@@ -125,15 +125,21 @@ def chat(req: ChatRequest, user=Depends(get_current_user)):
         role=user["role"],
     )
 
+    answer = _build_answer(result)
+    # Informational replies (greetings, meta-questions) should not set error=True
+    # on the response — that causes the frontend to render them as error messages.
+    is_info_reply = result.error and not result.sql and result.row_count == 0 and (
+        result.error.startswith("I am Sahayak") or result.error.startswith("This question")
+    )
     return ChatResponse(
         session_id=sid,
         question=req.question,
-        answer=_build_answer(result),
+        answer=answer,
         sql=result.sql,
         columns=result.columns,
         rows=result.rows[:50],
         row_count=result.row_count,
-        error=result.error,
+        error=None if is_info_reply else result.error,
     )
 
 
