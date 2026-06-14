@@ -8,5 +8,14 @@
   "functions": {
     "source": "functions",
     "targets": ["sahayak_api"]
+  },
+  "appsail": [
+    {
+      "name": "sahayak-backend",
+      "source": "."
+    }
+  ],
+  "apig": {
+    "enabled": false
   }
 }

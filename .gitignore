@@ -1,6 +1,6 @@
-# Generated data artifacts (reproducible via data/generate.py — keep repo lean)
-data/ksp_crime.db
+# Generated data artifacts
 data/csv/
+# data/ksp_crime.db is included for AppSail deployment
 
 # Python
 __pycache__/

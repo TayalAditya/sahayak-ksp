@@ -1,28 +1,19 @@
 {
-  "services": {
-    "appsail": [
-      {
-        "name": "sahayak-backend",
-        "type": "appsail",
-        "stack": "python3.11",
-        "memory": 1024,
-        "port": 8000,
-        "dockerfile_path": "backend/Dockerfile",
-        "env": {
-          "LLM_PROVIDER": "catalyst-qwen",
-          "ZOHO_DC": "in",
-          "CATALYST_PROJECT_ID": "50328000000013024"
-        }
-      }
-    ],
-    "web_client": [
-      {
-        "name": "sahayak-frontend",
-        "type": "slate",
-        "build_command": "npm run build",
-        "build_output_dir": "dist",
-        "root_dir": "frontend"
-      }
-    ]
-  }
+  "command": "python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000",
+  "build_path": ".",
+  "stack": "python_3_11",
+  "env_variables": {
+    "PYTHONPATH": ".",
+    "LLM_PROVIDER": "catalyst-qwen",
+    "APP_DC": "in",
+    "APP_ORG_ID": "60074201340",
+    "APP_QWEN_ENDPOINT": "https://api.catalyst.zoho.in/quickml/v2/project/50328000000013024/llm/chat",
+    "APP_QWEN_MODEL": "crm-di-qwen_coder_7b-it",
+    "APP_CLIENT_ID": "***REMOVED***",
+    "APP_CLIENT_SECRET": "***REMOVED***",
+    "APP_REFRESH_TOKEN": "***REMOVED***",
+    "PYTHONPATH": "/app"
+  },
+  "memory": 512,
+  "scripts": {}
 }
