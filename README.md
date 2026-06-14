@@ -1,83 +1,121 @@
-# Sahayak — Intelligent Conversational AI for the KSP Crime Database
+# Sahayak — Conversational AI for the KSP Crime Database
 
-> **Datathon 2026 · Karnataka State Police · Challenge 01**
-> A conversational crime-intelligence platform that lets investigators, analysts, and
-> policymakers query the state crime database in natural language (English + ಕನ್ನಡ),
-> with every answer grounded in real records and a transparent evidence trail.
+> **KSP Datathon 2026 · Challenge 01**
+> Ask the Karnataka State Police crime database a question in plain **English or ಕನ್ನಡ** and
+> get an answer **grounded in real records** — with the exact SQL and the source FIR rows
+> attached to every response.
 
-*Sahayak* (ಸಹಾಯಕ, "assistant/helper") is built on the principle that **the AI never invents facts** —
-it writes a verifiable query against the crime database, runs it on real rows, and shows
-its work: the query it ran and the source FIRs behind every answer.
+**Live demo:** https://sahayak-frontend-xpsqtdps.onslate.in
+**Backend API:** https://sahayak-backend-50043102650.development.catalystappsail.in
+
+*Sahayak* (ಸಹಾಯಕ, “assistant”) is built on one rule: **the model never invents a number.**
+It writes a read-only SQL query, runs it on the actual FIRs, and shows its work.
 
 ---
 
 ## The problem (Challenge 01)
 
-The State Crime Records Bureau (SCRB) manages crime data from **1100+ police stations**
-across Karnataka. Today, insight is locked behind static dashboards and manual SQL.
-Sahayak turns the whole database into a question box — and goes beyond retrieval to
-crime-pattern discovery, criminal-network analysis, offender profiling, and predictive
-early-warning intelligence.
+The State Crime Records Bureau holds crime data from 1,100+ stations across Karnataka, but
+getting an answer means waiting on a data cell or staring at a static dashboard that can’t
+answer ad-hoc questions. The July-2024 IPC→BNS legal-code switch silently breaks queries
+that only know one code. Sahayak turns the whole database into a question box — and proves
+every answer.
 
-## What makes this win
+## What it does (live in the prototype)
 
-| Most teams will… | Sahayak does… |
+- **Natural language → SQL** — Qwen 2.5 Coder 7B writes a read-only `SELECT`; a guardrail rejects any write.
+- **Evidence trail** — every answer shows the exact SQL executed **and** the source FIR rows.
+- **“Grounded · N records” badge** — shown only when real rows back the answer.
+- **Audit log** — user, question, SQL, row count and role persisted on every query.
+- **Auto visualisation** — bar / line / donut + KPI tiles, inferred from the result (hand-built SVG, no chart library).
+- **IPC ↔ BNS cross-walk** — a mapping table lets one question span both legal codes across the 2024 transition.
+- **Bilingual UI + voice** — English / ಕನ್ನಡ toggle and browser voice input (Web Speech API).
+- **Multi-turn conversations** with per-chat history, and light/dark themes.
+
+> Analyst tools — criminal-network, hotspots, time-trends and AI case summaries — are
+> implemented on the backend API (`/tools/*`) and are the next to surface in the UI.
+
+## Architecture
+
+![Architecture](docs/architecture.png)
+
+**Live request path:** Browser (React SPA on **Catalyst Slate**) → `GET /chat` → **Catalyst AppSail**
+(FastAPI · Python 3.11 · 256 MB) → **Catalyst QuickML** (Qwen 2.5 Coder 7B) for NL→SQL → query runs on a
+**bundled SQLite** database → answer + evidence returned. (`GET /chat` is used to bypass the Catalyst
+proxy’s CORS preflight.)
+
+**Roadmap (Catalyst-native):** migrate SQLite → Data Store/ZCQL · Zia for STT/TTS/translation ·
+Catalyst Authentication enforcing the 4-role RBAC model · Qwen 14B Instruct for case summaries · SmartBrowz PDF export.
+
+## Tech stack
+
+| Layer | Tech |
 |---|---|
-| Let the LLM "reason" over data → hallucinated numbers | LLM writes a **verifiable query**; answers computed on real rows |
-| Bolt on translation at the end | **Bilingual (EN + Kannada) + voice** designed in from day 1 |
-| Build a slick chat with no sourcing | **Evidence trail** — every answer cites its FIRs + shows the query |
-| Flat Q&A, miss the graph | **Criminal-network** link analysis surfaced as a tool |
-| 10 shallow disjoint tabs | One **conversational agent that orchestrates** every module as a tool |
-
-## Architecture (Catalyst-native — deployment is mandatory on Zoho Catalyst)
-
-```
-                ┌─────────────────────────────────────────────┐
-   EN / ಕನ್ನಡ   │  React SPA (Slate)  — chat · evidence panel  │
-   voice ⇄ text │  voice ⇄ Catalyst NLP (STT/TTS/translation)  │
-                └───────────────────────┬─────────────────────┘
-                                        │  REST (API Gateway)
-                ┌───────────────────────▼─────────────────────┐
-                │  Orchestrator (AppSail / Functions)          │
-                │  • RBAC + audit log   • evidence assembler   │
-                │  • Agent: routes a question to a TOOL ↓      │
-                └───┬──────────┬──────────┬──────────┬─────────┘
-            NL→ZCQL │   network │  hotspot │  case-   │  risk / forecast
-           (Qwen    │   graph   │  trends  │  summary │  (QuickML ML)
-           Coder)   │           │          │ (Qwen14B)│
-                ┌───▼──────────▼──────────▼──────────▼─────────┐
-                │  Catalyst Data Store (ZCQL) + Search          │
-                │  CCTNS-shaped crime records                   │
-                └───────────────────────────────────────────────┘
-   Grounding/citations: QuickML RAG + Knowledge Base (legal codes, SOPs)
-```
-
-**LLM:** Catalyst QuickML serves open-source **Qwen** (14B-Instruct / 7B-Coder). We develop
-locally against Qwen-via-Ollama for production parity, behind a swappable `LLMProvider`.
-
-See [docs/PHASES.md](docs/PHASES.md) for the build roadmap and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the Catalyst service mapping.
-
----
+| Frontend | React 18 · Vite · Axios · hand-built SVG charts · Web Speech API · Catalyst Slate |
+| Backend | Python 3.11 · FastAPI · Uvicorn · Catalyst AppSail · read-only SQL guard · multi-turn session engine |
+| AI | Qwen 2.5 Coder 7B (NL→SQL) via Catalyst QuickML; swappable `LLMProvider` (mock / ollama / catalyst-qwen) |
+| Data | Bundled SQLite — 3,500 FIRs · 6,000 persons · 16 districts · 64 stations · IPC↔BNS mapping |
 
 ## Repo layout
 
 ```
-data/        synthetic CCTNS-shaped dataset + generator + schema   (Phase 1 ✅)
-backend/     orchestrator, NL→query engine, tools                  (Phase 2–3)
-frontend/    React chat SPA                                        (Phase 4)
-docs/        architecture, phases, schema, demo script
+data/        synthetic CCTNS-shaped dataset, generator, schema, ksp_crime.db
+backend/     FastAPI app (api/), NL→SQL engine (engine/), analyst tools (tools/), eval harness (tests/)
+frontend/    React + Vite chat SPA
+functions/   Catalyst Basic I/O function variant of the API
+docs/        architecture diagram, demo video script, submission assets
 ```
 
-## Quick start (Phase 1 — data)
+---
 
+## Setup & run (local)
+
+### Prerequisites
+- Python 3.11+ and Node.js 18+
+- Copy the env template and fill in your own values (see **Security** below):
+  ```bash
+  cp .env.example .env
+  ```
+
+### 1) Data (optional — a prebuilt `data/ksp_crime.db` is already included)
 ```bash
 cd data
 python -m pip install -r requirements.txt
-python generate.py            # builds data/ksp_crime.db (+ CSV exports)
-python verify.py              # prints summary stats + sample queries
+python generate.py     # rebuilds data/ksp_crime.db
+python verify.py       # prints summary stats
 ```
 
-## Status
+### 2) Backend (FastAPI)
+```bash
+python -m pip install fastapi uvicorn python-multipart
+python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
+```
+- `LLM_PROVIDER` selects the model backend: `mock` (offline, default), `ollama-qwen` (local Qwen via Ollama), or `catalyst-qwen` (production).
+- Health check: `GET http://localhost:8000/health`
 
-Phase 1 (data foundation) — **in progress**. See [docs/PHASES.md](docs/PHASES.md).
+### 3) Frontend (React + Vite)
+```bash
+cd frontend
+npm install
+npm run dev            # http://localhost:5173  (calls the backend on :8000 in dev)
+npm run build          # production build for Catalyst Slate
+```
+
+### Evaluation
+```bash
+python -m backend.tests.eval_harness          # 12 canonical officer questions (mock, offline)
+python -m backend.tests.eval_harness --live   # against Catalyst Qwen
+```
+
+## Deployment (Zoho Catalyst)
+- **Frontend → Slate**, **Backend → AppSail**. See [DEPLOY_COMMANDS.md](DEPLOY_COMMANDS.md).
+- All secrets (Zoho OAuth client id/secret, refresh token, QuickML endpoint) are provided to AppSail via
+  **Catalyst Console → Environment Variables**, never committed to the repo.
+
+## Security
+- **Never commit credentials.** Real secrets live only in the Catalyst Console env vars and a local `.env`
+  (git-ignored). `app-config.json` / `.env.example` should contain placeholders only.
+- Database access is **read-only** at the query layer; write statements are rejected before execution.
+
+## License
+For the KSP Datathon 2026 submission. © 2026 Aditya Tayal.

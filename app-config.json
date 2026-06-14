@@ -8,9 +8,9 @@
     "APP_ORG_ID": "60074201340",
     "APP_QWEN_ENDPOINT": "https://api.catalyst.zoho.in/quickml/v2/project/50328000000013024/llm/chat",
     "APP_QWEN_MODEL": "crm-di-qwen_coder_7b-it",
-    "APP_CLIENT_ID": "***REMOVED***",
-    "APP_CLIENT_SECRET": "***REMOVED***",
-    "APP_REFRESH_TOKEN": "***REMOVED***"
+    "APP_CLIENT_ID": "",
+    "APP_CLIENT_SECRET": "",
+    "APP_REFRESH_TOKEN": ""
   },
   "memory": 256,
   "scripts": {}
