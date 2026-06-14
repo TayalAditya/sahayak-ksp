@@ -54,19 +54,55 @@ SELECT bail_status,COUNT(*) AS n FROM arrests GROUP BY bail_status ORDER BY n DE
 Q:IPC vs BNS
 SELECT ls.act,COUNT(*) AS firs FROM fir_sections fs JOIN legal_sections ls ON ls.id=fs.legal_section_id GROUP BY ls.act LIMIT 200;"""
 
-# Non-DB inputs to intercept before hitting the LLM
-_NON_QUERY_PATTERNS = re.compile(
-    r"^\s*(hi|hello|hey|namaste|good\s*(morning|evening|afternoon|day)|thanks?|thank\s*you|"
-    r"ok|okay|sure|yes|no|bye|goodbye|help\s*me|what\s*can\s*you\s*do|who\s*are\s*you|"
-    r"what\s*is\s*(this|sahayak)|test|ping)\s*[!?.]*\s*$",
+# Greetings / farewells — short friendly response
+_GREETING_RE = re.compile(
+    r"^\s*(hi+|hello+|hey+|namaste|good\s*(morning|evening|afternoon|day)|"
+    r"bye+|goodbye|see\s*you|ciao|later)\s*[!?.]*\s*$",
     re.IGNORECASE
 )
-
-_NON_QUERY_REPLY = (
-    "I am Sahayak, the KSP crime intelligence query engine. "
-    "Ask me questions about FIRs, accused, districts, crime trends, or offender networks. "
-    "Example: \"How many theft cases in Bengaluru?\" or \"Show repeat offenders by case count.\""
+_GREETING_REPLY = (
+    "Hello. I can query the KSP crime database — ask about FIRs, crime trends, "
+    "accused persons, districts, or network links. "
+    "Try: \"How many robbery cases this year?\" or \"Show repeat offenders.\""
 )
+_FAREWELL_RE = re.compile(r"^\s*(bye+|goodbye|see\s*you|ciao|later|quit|exit)\s*[!?.]*\s*$", re.IGNORECASE)
+_FAREWELL_REPLY = "Goodbye. Stay safe."
+
+# Meta / help questions — explain capabilities
+_META_RE = re.compile(
+    r"^\s*(what\s+can\s+(you|this)|what\s+do\s+you|"
+    r"(who|what)\s+are\s+you|help(\s+me)?|"
+    r"what\s+is\s+(this|sahayak)|how\s+do\s+(i|you)|"
+    r"(can|will)\s+you\s+(show|tell|give|help|answer|do)|"
+    r"what\s+(can|should)\s+i|why\s+not|why\s+can.t|"
+    r"ok+|okay|sure|yes|no|thanks?|thank\s+you|test|ping|"
+    r"[\?!.\s]+)\s*$",
+    re.IGNORECASE
+)
+_META_REPLY = (
+    "I answer questions about the KSP crime database. Ask me things like:\n"
+    "— \"How many theft cases in Bengaluru Urban?\"\n"
+    "— \"Which district has the most FIRs?\"\n"
+    "— \"Show top 5 repeat offenders\"\n"
+    "— \"What is the bail status breakdown?\"\n"
+    "— \"FIR trend by year\"\n"
+    "— \"Which gangs are linked to robbery cases?\""
+)
+
+# Short single-word queries that need clarification
+_SHORT_QUERY_MAP = {
+    "fir": "SELECT f.fir_number, f.crime_head, f.occurrence_date, f.status, d.name AS district FROM firs f JOIN districts d ON d.id=f.district_id ORDER BY f.reported_date DESC LIMIT 20;",
+    "firs": "SELECT f.fir_number, f.crime_head, f.occurrence_date, f.status, d.name AS district FROM firs f JOIN districts d ON d.id=f.district_id ORDER BY f.reported_date DESC LIMIT 20;",
+    "theft": "SELECT COUNT(*) AS theft_cases FROM firs WHERE crime_head='Theft' LIMIT 200;",
+    "robbery": "SELECT COUNT(*) AS robbery_cases FROM firs WHERE crime_head='Robbery' LIMIT 200;",
+    "murder": "SELECT COUNT(*) AS murder_cases FROM firs WHERE crime_head='Murder' LIMIT 200;",
+    "districts": "SELECT d.name, COUNT(*) AS firs FROM firs f JOIN districts d ON d.id=f.district_id GROUP BY d.id ORDER BY firs DESC LIMIT 16;",
+    "accused": "SELECT p.full_name, COUNT(*) AS cases FROM fir_persons fp JOIN persons p ON p.id=fp.person_id WHERE fp.role='Accused' GROUP BY p.id ORDER BY cases DESC LIMIT 20;",
+    "arrests": "SELECT bail_status, COUNT(*) AS n FROM arrests GROUP BY bail_status ORDER BY n DESC LIMIT 200;",
+    "gangs": "SELECT gang_name, COUNT(DISTINCT person_a_id) AS members FROM associations WHERE gang_name IS NOT NULL GROUP BY gang_name ORDER BY members DESC LIMIT 15;",
+    "trends": "SELECT substr(occurrence_date,1,4) AS year, COUNT(*) AS firs FROM firs GROUP BY year ORDER BY year LIMIT 200;",
+    "data": "SELECT f.fir_number, f.crime_head, f.occurrence_date, f.status, d.name AS district FROM firs f JOIN districts d ON d.id=f.district_id ORDER BY f.reported_date DESC LIMIT 50;",
+}
 
 _FEW_SHOT = ""
 
@@ -127,10 +163,31 @@ def ask(question, provider=None, conversation_context=""):
       .error      — non-None if something went wrong
     """
     provider = provider or llm.get_provider()
+    q = question.strip()
 
-    # Intercept non-database inputs (greetings, meta-questions) before hitting the LLM.
-    if _NON_QUERY_PATTERNS.match(question.strip()):
-        return NL2SQLResult(question=question, error=_NON_QUERY_REPLY, raw_llm="[intercepted]")
+    # ── Greetings / farewells ──────────────────────────────────────────────────
+    if _FAREWELL_RE.match(q):
+        return NL2SQLResult(question=question, error=_FAREWELL_REPLY, raw_llm="[intercepted]")
+    if _GREETING_RE.match(q):
+        return NL2SQLResult(question=question, error=_GREETING_REPLY, raw_llm="[intercepted]")
+
+    # ── Meta / help / conversational ──────────────────────────────────────────
+    if _META_RE.match(q):
+        return NL2SQLResult(question=question, error=_META_REPLY, raw_llm="[intercepted]")
+
+    # ── Single-word shortcut queries ──────────────────────────────────────────
+    key = q.lower().rstrip("s?!")
+    if q.lower() in _SHORT_QUERY_MAP or key in _SHORT_QUERY_MAP:
+        prebuilt_sql = _SHORT_QUERY_MAP.get(q.lower()) or _SHORT_QUERY_MAP.get(key)
+        try:
+            res = db.run_query(prebuilt_sql)
+            return NL2SQLResult(
+                question=question,
+                sql=res["sql"], columns=res["columns"],
+                rows=res["rows"], row_count=res["row_count"],
+            )
+        except Exception:
+            pass  # fall through to LLM
 
     # Build user prompt — lead with the question to anchor the model's first token on SQL.
     context_block = f"Previous context:\n{conversation_context}\n\n" if conversation_context else ""
@@ -149,7 +206,7 @@ def ask(question, provider=None, conversation_context=""):
     if not raw or raw.strip().upper() == "CANNOT_ANSWER":
         return NL2SQLResult(
             question=question,
-            error="This question cannot be answered with a crime database query.",
+            error=_META_REPLY,
             raw_llm=raw,
         )
 

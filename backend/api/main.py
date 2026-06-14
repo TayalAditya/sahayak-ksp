@@ -74,13 +74,16 @@ class ChatResponse(BaseModel):
 
 # --------------------------------------------------------------------------- helpers
 
+_INFO_PREFIXES = (
+    "I am Sahayak", "This question", "Hello.", "Goodbye",
+    "I answer questions", "I can query",
+)
+
 def _build_answer(result) -> str:
     if result.error:
-        # Non-query intercepts (greetings, meta questions) come back as "error" but are
-        # actually informational messages — surface them cleanly without "I could not…".
         msg = result.error
-        if msg.startswith("I am Sahayak") or msg.startswith("This question"):
-            return msg
+        if any(msg.startswith(p) for p in _INFO_PREFIXES):
+            return msg          # informational — render as-is, no "Unable to answer:"
         return f"Unable to answer: {msg}"
     if result.row_count == 0:
         return "No records found matching your query."
@@ -128,8 +131,10 @@ def chat(req: ChatRequest, user=Depends(get_current_user)):
     answer = _build_answer(result)
     # Informational replies (greetings, meta-questions) should not set error=True
     # on the response — that causes the frontend to render them as error messages.
-    is_info_reply = result.error and not result.sql and result.row_count == 0 and (
-        result.error.startswith("I am Sahayak") or result.error.startswith("This question")
+    _INFO_STARTS = ("I am Sahayak", "This question", "Hello.", "Goodbye",
+                    "I answer questions", "I can query")
+    is_info_reply = result.error and not result.sql and result.row_count == 0 and any(
+        result.error.startswith(s) for s in _INFO_STARTS
     )
     return ChatResponse(
         session_id=sid,
