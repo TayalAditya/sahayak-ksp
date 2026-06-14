@@ -1,0 +1,12 @@
+{
+  "slate": [
+    {
+      "name": "sahayak-frontend",
+      "source": "C:\\Users\\AdityaTayal\\Desktop\\Projects\\Datathon\\frontend"
+    }
+  ],
+  "functions": {
+    "source": "functions",
+    "targets": ["sahayak_api"]
+  }
+}

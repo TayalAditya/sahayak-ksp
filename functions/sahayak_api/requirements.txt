@@ -1,0 +1,5 @@
+zcatalyst-sdk
+flask
+fastapi==0.115.5
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
