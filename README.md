@@ -2,14 +2,17 @@
 
 > **KSP Datathon 2026 · Challenge 01**
 > Ask the Karnataka State Police crime database a question in plain **English or ಕನ್ನಡ** and
-> get an answer **grounded in real records** — with the exact SQL and the source FIR rows
+> get an answer **grounded in the database's own rows** — with the exact SQL and the source FIR rows
 > attached to every response.
+>
+> The database is **synthetic**: 3,500 FIRs generated to match the shape of CCTNS records.
+> No real FIR or person is in it.
 
 **Live demo:** https://sahayak-frontend-xpsqtdps.onslate.in
 **Backend API:** https://sahayak-backend-50043102650.development.catalystappsail.in
 
 *Sahayak* (ಸಹಾಯಕ, “assistant”) is built on one rule: **the model never invents a number.**
-It writes a read-only SQL query, runs it on the actual FIRs, and shows its work.
+It writes a read-only SQL query, runs it on the FIR database, and shows its work.
 
 ---
 
@@ -25,7 +28,8 @@ every answer.
 
 - **Natural language → SQL** — Qwen 2.5 Coder 7B writes a read-only `SELECT`; a guardrail rejects any write.
 - **Evidence trail** — every answer shows the exact SQL executed **and** the source FIR rows.
-- **“Grounded · N records” badge** — shown only when real rows back the answer.
+- **“Grounded · N records” badge** — shown only when rows from the database back the answer. Grounded means traceable, not
+  necessarily right: check the SQL.
 - **Audit log** — user, question, SQL, row count and role persisted on every query.
 - **Auto visualisation** — bar / line / donut + KPI tiles, inferred from the result (hand-built SVG, no chart library).
 - **IPC ↔ BNS cross-walk** — a mapping table lets one question span both legal codes across the 2024 transition.
